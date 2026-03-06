@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -6,17 +5,21 @@ import { Header } from "@/components/Header";
 import { UploadZone } from "@/components/UploadZone";
 import { PreviewGrid, FileItem } from "@/components/PreviewGrid";
 import { OutputSection } from "@/components/OutputSection";
+import { FormatSelector } from "@/components/FormatSelector";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Trash2, Wand2, Loader2, Sparkles } from "lucide-react";
+import { Trash2, Wand2, Loader2, Sparkles, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
-import { convertImageToSvg } from "@/lib/converter";
+import { convertImage, ImageFormat } from "@/lib/converter";
 
 export default function Home() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [isConverting, setIsConverting] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [fromFormat, setFromFormat] = useState<ImageFormat>("png");
+  const [toFormat, setToFormat] = useState<ImageFormat>("svg");
+  
   const { toast } = useToast();
 
   const addFiles = (newFiles: File[]) => {
@@ -24,9 +27,11 @@ export default function Home() {
       id: Math.random().toString(36).substr(2, 9),
       file,
       preview: URL.createObjectURL(file),
-      width: 16, // number of colors for imagetracer
-      height: 1, // line filter weight or precision
-      status: 'idle'
+      width: 16,
+      height: 1,
+      status: 'idle',
+      fromFormat,
+      toFormat
     }));
     setFiles(prev => [...prev, ...newItems]);
   };
@@ -51,6 +56,16 @@ export default function Home() {
 
   const convertAll = async () => {
     if (files.length === 0) return;
+    
+    if (fromFormat === toFormat) {
+      toast({ 
+        title: "Format Conflict", 
+        description: "Source and target formats cannot be the same.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
     setIsConverting(true);
     setProgress(0);
 
@@ -73,54 +88,82 @@ export default function Home() {
           reader.readAsDataURL(item.file);
         });
 
-        const svg = await convertImageToSvg(dataUrl, {
+        const result = await convertImage(dataUrl, toFormat, {
           numberofcolors: item.width,
           ltres: item.height,
           qtres: item.height,
         });
 
-        updateFile(item.id, { status: 'completed', svg });
+        updateFile(item.id, { status: 'completed', result });
         completed++;
         setProgress(Math.round((completed / total) * 100));
       }
-      toast({ title: "Conversion Successful", description: `Successfully converted ${files.length} images.` });
+      toast({ title: "Conversion Successful", description: `Successfully processed ${files.length} images.` });
     } catch (error) {
       console.error(error);
-      toast({ title: "Conversion Failed", description: "Something went wrong during the process.", variant: "destructive" });
+      toast({ title: "Conversion Failed", description: "Something went wrong during the conversion.", variant: "destructive" });
     } finally {
       setIsConverting(false);
     }
   };
 
-  const hasConversionStarted = files.some(f => f.status === 'completed');
+  const handleFromFormatChange = (val: ImageFormat) => {
+    if (files.length > 0) {
+      toast({ 
+        title: "Queue Cleared", 
+        description: "Changing source format requires re-uploading compatible files.",
+        variant: "destructive"
+      });
+      clearAll();
+    }
+    setFromFormat(val);
+  };
+
+  const handleToFormatChange = (val: ImageFormat) => {
+    setToFormat(val);
+    setFiles(prev => prev.map(item => ({ ...item, toFormat: val, status: 'idle' })));
+  };
+
+  const isSameFormat = fromFormat === toFormat;
 
   return (
     <main className="flex-grow flex flex-col items-center">
       <Header />
       
-      <div className="w-full max-w-4xl px-4 space-y-8 pb-20">
+      <div className="w-full max-w-4xl px-4 space-y-10 pb-20">
+        <FormatSelector 
+          fromFormat={fromFormat}
+          toFormat={toFormat}
+          onFromChange={handleFromFormatChange}
+          onToChange={handleToFormatChange}
+          disabled={isConverting}
+        />
+
         <UploadZone 
           onFilesAdded={addFiles} 
           disabled={isConverting} 
-          currentCount={files.length} 
+          currentCount={files.length}
+          fromFormat={fromFormat}
         />
 
         <AnimatePresence>
           {files.length > 0 && (
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
+              initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
+              exit={{ opacity: 0, scale: 0.98 }}
               className="space-y-6"
             >
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-secondary/30 border border-border rounded-2xl">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-secondary/20 border border-border/50 rounded-2xl backdrop-blur-sm">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-primary/10 rounded-lg text-primary">
                     <Sparkles size={20} />
                   </div>
                   <div>
-                    <h3 className="font-semibold">Conversion Controls</h3>
-                    <p className="text-xs text-muted-foreground">Adjust settings per image or start batch process</p>
+                    <h3 className="font-semibold text-sm">Batch Processing Queue</h3>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-tight font-bold">
+                      {fromFormat} <span className="text-primary mx-1">→</span> {toFormat}
+                    </p>
                   </div>
                 </div>
                 
@@ -128,41 +171,48 @@ export default function Home() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-muted-foreground hover:text-destructive gap-2"
+                    className="text-muted-foreground hover:text-destructive gap-2 text-xs"
                     onClick={clearAll}
                     disabled={isConverting}
                   >
-                    <Trash2 size={16} />
-                    Clear All
+                    <Trash2 size={14} />
+                    Clear Queue
                   </Button>
                   <Button
                     size="lg"
                     className="gap-2 px-8 bg-accent hover:bg-accent/90 text-accent-foreground font-bold shadow-lg shadow-accent/20"
                     onClick={convertAll}
-                    disabled={isConverting}
+                    disabled={isConverting || isSameFormat}
                   >
                     {isConverting ? (
                       <>
                         <Loader2 className="animate-spin" size={20} />
-                        Converting...
+                        Processing...
                       </>
                     ) : (
                       <>
                         <Wand2 size={20} />
-                        Convert to SVG
+                        Convert All
                       </>
                     )}
                   </Button>
                 </div>
               </div>
 
+              {isSameFormat && (
+                <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-xs">
+                  <AlertTriangle size={16} />
+                  <span>Source and target formats cannot be the same. Please adjust the settings.</span>
+                </div>
+              )}
+
               {isConverting && (
                 <div className="space-y-2 px-2">
-                  <div className="flex justify-between text-sm font-medium">
-                    <span>Processing Queue</span>
-                    <span>{progress}%</span>
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span>Overall Progress</span>
+                    <span className="text-primary font-mono">{progress}%</span>
                   </div>
-                  <Progress value={progress} className="h-2 bg-secondary" />
+                  <Progress value={progress} className="h-1.5 bg-secondary" />
                 </div>
               )}
 
@@ -179,8 +229,8 @@ export default function Home() {
       <OutputSection items={files} />
 
       <footer className="w-full py-8 mt-auto border-t border-border/50 text-center">
-        <p className="text-xs text-muted-foreground">
-          &copy; {new Date().getFullYear()} PNG2SVG Studio • Processing is 100% private & client-side
+        <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+          &copy; {new Date().getFullYear()} PNG2SVG Studio • Client-Side Processing • No Server Uploads
         </p>
       </footer>
     </main>

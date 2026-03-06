@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useDropzone } from "react-dropzone";
@@ -6,14 +5,16 @@ import { Upload, FileImage, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import { useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { ImageFormat } from "@/lib/converter";
 
 interface UploadZoneProps {
   onFilesAdded: (files: File[]) => void;
   disabled: boolean;
   currentCount: number;
+  fromFormat: ImageFormat;
 }
 
-export function UploadZone({ onFilesAdded, disabled, currentCount }: UploadZoneProps) {
+export function UploadZone({ onFilesAdded, disabled, currentCount, fromFormat }: UploadZoneProps) {
   const { toast } = useToast();
   const MAX_FILES = 5;
   const MAX_SIZE = 10 * 1024 * 1024; // 10MB
@@ -22,7 +23,11 @@ export function UploadZone({ onFilesAdded, disabled, currentCount }: UploadZoneP
     if (rejectedFiles.length > 0) {
       const error = rejectedFiles[0].errors[0];
       if (error.code === "file-invalid-type") {
-        toast({ title: "Invalid File Type", description: "Only PNG images are allowed.", variant: "destructive" });
+        toast({ 
+          title: "Invalid File Type", 
+          description: `Uploaded file type must match the selected '${fromFormat.toUpperCase()}' format.`, 
+          variant: "destructive" 
+        });
       } else if (error.code === "file-too-large") {
         toast({ title: "File Too Large", description: "Image must be smaller than 10MB.", variant: "destructive" });
       } else {
@@ -37,11 +42,13 @@ export function UploadZone({ onFilesAdded, disabled, currentCount }: UploadZoneP
     }
 
     onFilesAdded(acceptedFiles);
-  }, [onFilesAdded, currentCount, toast]);
+  }, [onFilesAdded, currentCount, toast, fromFormat]);
+
+  const mimeType = fromFormat === 'svg' ? 'image/svg+xml' : fromFormat === 'jpg' || fromFormat === 'jpeg' ? 'image/jpeg' : `image/${fromFormat}`;
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/png': ['.png'] },
+    accept: { [mimeType]: [] },
     maxFiles: MAX_FILES - currentCount,
     maxSize: MAX_SIZE,
     disabled: disabled || currentCount >= MAX_FILES,
@@ -49,16 +56,16 @@ export function UploadZone({ onFilesAdded, disabled, currentCount }: UploadZoneP
 
   return (
     <motion.div
-      whileHover={{ scale: 1.01 }}
-      whileTap={{ scale: 0.99 }}
+      whileHover={{ scale: 1.005 }}
+      whileTap={{ scale: 0.995 }}
       className="w-full max-w-3xl mx-auto"
     >
       <div
         {...getRootProps()}
         className={`
-          relative border-2 border-dashed rounded-3xl p-12 transition-all cursor-pointer
+          relative border-2 border-dashed rounded-3xl p-10 transition-all cursor-pointer
           flex flex-col items-center justify-center text-center gap-4
-          ${isDragActive ? 'border-primary bg-primary/5' : 'border-border bg-secondary/50 hover:bg-secondary'}
+          ${isDragActive ? 'border-primary bg-primary/5' : 'border-border bg-secondary/30 hover:bg-secondary/50'}
           ${(disabled || currentCount >= MAX_FILES) ? 'opacity-50 cursor-not-allowed' : ''}
         `}
       >
@@ -68,11 +75,11 @@ export function UploadZone({ onFilesAdded, disabled, currentCount }: UploadZoneP
         </div>
         
         <div className="space-y-2">
-          <p className="text-xl font-medium">
-            {isDragActive ? "Drop the images here" : "Click or drag images to upload"}
+          <p className="text-lg font-medium">
+            {isDragActive ? "Drop them here" : `Click or drag ${fromFormat.toUpperCase()} images to upload`}
           </p>
-          <p className="text-sm text-muted-foreground">
-            PNG format only • Max 10MB per file
+          <p className="text-xs text-muted-foreground">
+            Max 10MB per file • Up to {MAX_FILES} images
           </p>
         </div>
 

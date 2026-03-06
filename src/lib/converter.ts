@@ -1,4 +1,3 @@
-
 import ImageTracer from 'imagetracerjs';
 
 export interface ConversionOptions {
@@ -21,25 +20,63 @@ export const defaultOptions: ConversionOptions = {
   linefilter: true
 };
 
-export const convertImageToSvg = (dataUrl: string, options: Partial<ConversionOptions> = {}): Promise<string> => {
+export type ImageFormat = 'png' | 'jpg' | 'jpeg' | 'webp' | 'bmp' | 'gif' | 'svg';
+
+const formatToMime = (format: ImageFormat): string => {
+  switch (format) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'svg':
+      return 'image/svg+xml';
+    default:
+      return `image/${format}`;
+  }
+};
+
+export const convertImage = async (
+  dataUrl: string,
+  toFormat: ImageFormat,
+  options: Partial<ConversionOptions> = {}
+): Promise<string> => {
+  if (toFormat === 'svg') {
+    return new Promise((resolve, reject) => {
+      try {
+        ImageTracer.imageToSVG(
+          dataUrl,
+          (svgString: string) => {
+            if (svgString) {
+              resolve(svgString);
+            } else {
+              reject(new Error("Conversion failed to produce SVG string"));
+            }
+          },
+          { ...defaultOptions, ...options }
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Raster conversion using Canvas
   return new Promise((resolve, reject) => {
-    try {
-      // ImageTracer.imageToSVG can take a URL or dataURL
-      // The third parameter is the options object
-      // The second parameter is a callback if needed, or we can use the return value
-      ImageTracer.imageToSVG(
-        dataUrl,
-        (svgString: string) => {
-          if (svgString) {
-            resolve(svgString);
-          } else {
-            reject(new Error("Conversion failed to produce SVG string"));
-          }
-        },
-        { ...defaultOptions, ...options }
-      );
-    } catch (error) {
-      reject(error);
-    }
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error("Could not get canvas context"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      const mimeType = formatToMime(toFormat);
+      const resultDataUrl = canvas.toDataURL(mimeType);
+      resolve(resultDataUrl);
+    };
+    img.onerror = () => reject(new Error("Failed to load image for raster conversion"));
+    img.src = dataUrl;
   });
 };
